@@ -24,7 +24,7 @@ TERMUX_PACKAGE_MANAGERS=("apt" "pacman")
 
 # The repository base urls mapping for package managers.
 declare -A REPO_BASE_URLS=(
-	["apt"]="https://packages-cf.termux.dev/apt/termux-main"
+	["apt"]="https://pub-88d4652a5f2b459b95722d5376b49dfa.r2.dev/apt/termux-main"
 	["pacman"]="https://sync.termux-pacman.dev/main"
 )
 

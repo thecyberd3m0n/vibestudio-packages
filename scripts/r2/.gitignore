@@ -1,0 +1,6 @@
+# Local secrets and generated artifacts — never commit these.
+r2.env
+.aptly.conf
+bin/
+keys/*secret*
+*.tar.zst

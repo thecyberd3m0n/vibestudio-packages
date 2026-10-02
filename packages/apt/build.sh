@@ -74,10 +74,8 @@ termux_step_pre_configure() {
 
 termux_step_post_make_install() {
 	{
-		echo "# The main termux repository, with cloudflare cache"
-		echo "deb https://packages-cf.termux.dev/apt/termux-main/ stable main"
-		echo "# The main termux repository, without cloudflare cache"
-		echo "# deb https://packages.termux.dev/apt/termux-main/ stable main"
+		echo "# The VibeStudio package repository (Cloudflare R2)"
+		echo "deb https://pub-88d4652a5f2b459b95722d5376b49dfa.r2.dev/apt/termux-main/ stable main"
 	} > $TERMUX_PREFIX/etc/apt/sources.list
 
 	# apt-transport-tor

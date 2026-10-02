@@ -58,6 +58,19 @@ termux_step_create_debian_package() {
 	termux_step_create_alternatives
 	termux_step_create_python_debscripts
 
+	# App forks use a TERMUX__ROOTFS other than the upstream com.termux path, but
+	# some package-provided maintainer scripts hardcode it (and are created
+	# non-executable). /data/data/com.termux is not accessible from a fork's app
+	# uid, so rewrite to our rootfs and mark executable so dpkg can exec them.
+	if [[ "$TERMUX__ROOTFS" != "/data/data/com.termux/files" ]]; then
+		for _mscript in preinst postinst prerm postrm config; do
+			[[ -f "$_mscript" ]] || continue
+			sed -i "s|/data/data/com.termux/files|${TERMUX__ROOTFS}|g" "$_mscript"
+			chmod 0755 "$_mscript"
+		done
+		unset _mscript
+	fi
+
 	# Create control.tar.xz
 	tar --sort=name \
 		--mtime="@${SOURCE_DATE_EPOCH}" \

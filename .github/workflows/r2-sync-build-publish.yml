@@ -98,7 +98,7 @@ jobs:
             REMOVED=""
           else
             # Main-repo package dirs touched in the range; keep only those that still exist.
-            ALL="$(git diff --name-only "$BEFORE" "$AFTER" -- 'packages/*/' | awk -F/ 'NF>=3 {print $2}' | sort -u)"
+            ALL="$(git diff --name-only "$BEFORE" "$AFTER" -- packages/ | awk -F/ '$1=="packages" && NF>=3 {print $2}' | sort -u)"
             CHANGED="$(for p in $ALL; do [ -f "packages/$p/build.sh" ] && echo "$p"; done || true)"
             REMOVED="$(for p in $ALL; do [ -f "packages/$p/build.sh" ] || echo "$p"; done || true)"
           fi

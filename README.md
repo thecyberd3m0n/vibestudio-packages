@@ -1,4 +1,48 @@
-# Termux packages
+# VibeStudio packages
+
+Fork of [termux/termux-packages](https://github.com/termux/termux-packages) that builds
+the package repository for the [VibeStudio IDE](https://github.com/thecyberd3m0n/VibeStudioIDE)
+Android app. Every hour CI merges upstream, rebuilds whatever changed, and publishes
+to a Cloudflare R2 bucket.
+
+[![R2 sync, build & publish](https://github.com/thecyberd3m0n/vibestudio-packages/actions/workflows/r2-sync-build-publish.yml/badge.svg?branch=master)](https://github.com/thecyberd3m0n/vibestudio-packages/actions/workflows/r2-sync-build-publish.yml)
+
+## Why a fork
+
+VibeStudio installs under its own application ID (`com.vibestudio.app`), so the
+Termux prefix is `/data/data/com.vibestudio.app/files/usr` instead of
+`/data/data/com.termux/files/usr`. Prebuilt Termux `.deb`s hardcode the upstream
+path and cannot be reused; everything here is rebuilt from source with the
+VibeStudio prefix. Package recipes are otherwise identical to upstream.
+
+Scope: `main` repository, `aarch64`.
+
+## Package repository
+
+Hosted on Cloudflare R2, signed with the VibeStudio key
+(`B8A3BC5369A1AC36D52469AA1B19658F60470274`, shipped in `termux-keyring`):
+
+```
+deb https://pub-88d4652a5f2b459b95722d5376b49dfa.r2.dev/apt/termux-main stable main
+```
+
+The VibeStudio bootstrap and the `apt` package already point here.
+
+## How it works
+
+- `.github/workflows/r2-sync-build-publish.yml` — hourly: merge `upstream/master`,
+  diff since the `r2-published` tag, build changed packages in parallel (deps are
+  downloaded from this repo via `build-package.sh -i`), publish with aptly, move the tag.
+  Merge conflicts open a `sync-conflict` issue; build failures a `ci-failure` issue.
+- `scripts/r2/` — publish/seed scripts, public signing key, `skip.list` of packages
+  with known source-level failures.
+- Fork-specific edits to upstream files are kept minimal: `scripts/properties.sh`
+  (app ID, repo paths), `repo.json`, `packages/apt`, `packages/termux-keyring`,
+  `scripts/run-docker.sh`.
+
+---
+
+# Termux packages (upstream)
 
 ![GitHub repo size](https://img.shields.io/github/repo-size/termux/termux-packages)
 [![Packages last build status](https://github.com/termux/termux-packages/actions/workflows/packages.yml/badge.svg?branch=master)](https://github.com/termux/termux-packages/actions)
@@ -11,8 +55,6 @@
 [![Official subreddit](https://img.shields.io/badge/Reddit-%E2%80%8B?style=plastic&logo=reddit&logoColor=white&color=red)](https://www.reddit.com/r/termux/)
 
 [![Repository status](https://repology.org/badge/repository-big/termux.svg)](https://repology.org/repository/termux)
-
-<img src=".github/static/hosted-by-hetzner.png" alt="Hosted by Hetzner" width="128px"></img>
 
 This project contains scripts and patches to build packages for the [Termux](https://github.com/termux/termux-app)
 Android application.

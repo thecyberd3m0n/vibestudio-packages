@@ -216,7 +216,7 @@ jobs:
           ref: ${{ needs.sync.outputs.sha }}
           fetch-depth: 0
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         if: needs.sync.outputs.count != '0'
         with:
           pattern: build-*

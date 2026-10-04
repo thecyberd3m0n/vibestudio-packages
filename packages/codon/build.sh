@@ -6,6 +6,7 @@ TERMUX_PKG_VERSION=(
 	"0.20.2"
 	"20.1.7"
 )
+TERMUX_PKG_REVISION=1
 TERMUX_PKG_SRCURL=(
 	"https://github.com/exaloop/codon/archive/refs/tags/v${TERMUX_PKG_VERSION[0]}.tar.gz"
 	"https://github.com/exaloop/codon/releases/download/v${TERMUX_PKG_VERSION[0]}/codon-linux-x86_64.tar.gz"

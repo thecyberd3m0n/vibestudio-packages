@@ -118,8 +118,8 @@ jobs:
           {
             echo "### Sync ${BEFORE:0:10} → ${AFTER:0:10}"
             echo "- build: $COUNT package(s)"
-            [ -n "$CHANGED" ] && printf '  - %s\n' $CHANGED
-            [ -n "$REMOVED" ] && { echo "- removed upstream:"; printf '  - %s\n' $REMOVED; }
+            if [ -n "$CHANGED" ]; then printf '  - %s\n' $CHANGED; fi
+            if [ -n "$REMOVED" ]; then echo "- removed upstream:"; printf '  - %s\n' $REMOVED; fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   build:
@@ -146,7 +146,7 @@ jobs:
         run: |
           set -euo pipefail
           big=false
-          grep -qFx "${{ matrix.package }}" scripts/big-pkgs.list && big=true
+          if grep -qFx "${{ matrix.package }}" scripts/big-pkgs.list; then big=true; fi
           echo "big=$big" >> "$GITHUB_OUTPUT"
 
       - name: Enable zram
@@ -178,7 +178,7 @@ jobs:
           set -euo pipefail
           mkdir -p artifacts
           status=failure
-          [ "${{ steps.build.outcome }}" = "success" ] && status=success
+          if [ "${{ steps.build.outcome }}" = "success" ]; then status=success; fi
           echo "${{ matrix.package }} $status" > "artifacts/result-${{ matrix.package }}.txt"
           # Only ship debs from a successful build; filenames may contain ':' so tar them.
           if [ "$status" = success ] && compgen -G 'output/*.deb' >/dev/null; then

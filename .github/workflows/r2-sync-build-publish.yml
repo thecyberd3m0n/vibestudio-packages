@@ -1,50 +1,66 @@
 name: R2 sync, build & publish
 
-# Every 6 hours: merge upstream, build only the packages that changed since the
-# last publish (main / aarch64), and publish them to the R2 apt repo via aptly.
+# Hourly: merge upstream termux-packages, build the main-repo packages that
+# changed since the last publish (aarch64), publish them to the R2 apt repo.
+#
+# Jobs:
+#   sync    - merge upstream, push master, compute changed/removed packages
+#   build   - one matrix job per package; deps come from our R2 repo via -i
+#   publish - add all built debs to aptly, drop removed packages, move tag,
+#             open/update a tracking issue for failures
 on:
   schedule:
-    - cron: "0 */6 * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
     inputs:
       packages:
-        description: "Space-separated packages to force-build (skips change detection)"
+        description: "Space-separated packages to build (skips change detection)"
         required: false
         default: ""
+      skip_sync:
+        description: "Do not merge upstream first"
+        type: boolean
+        default: false
 
 permissions: {} # none by default; jobs opt in below
 
 concurrency:
-  # Serialize: the aptly DB in R2 must not be mutated by two runs at once.
+  # The aptly DB in R2 must not be mutated by two runs at once.
   group: r2-publish
   cancel-in-progress: false
 
 env:
   UPSTREAM_REPO: https://github.com/termux/termux-packages.git
   PUBLISHED_TAG: r2-published
-  COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+  TARGET_ARCH: aarch64
 
 jobs:
-  sync-build-publish:
+  sync:
     permissions:
-      contents: write # push merged master + move the r2-published tag
-      issues: write # open an issue on merge conflict
-    runs-on: ubuntu-26.04
+      contents: write # push merged master
+      issues: write # merge-conflict issue
+    runs-on: ubuntu-slim
+    outputs:
+      sha: ${{ steps.sync.outputs.sha }}
+      before: ${{ steps.sync.outputs.before }}
+      matrix: ${{ steps.changes.outputs.matrix }}
+      removed: ${{ steps.changes.outputs.removed }}
+      count: ${{ steps.changes.outputs.count }}
     steps:
-      - name: Clone repository
-        uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Merge upstream
+      - name: Merge upstream and push
         id: sync
+        env:
+          SKIP_SYNC: ${{ github.event.inputs.skip_sync }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           git config user.name "VibeStudio CI"
           git config user.email "packages@vibestudio.app"
 
-          # Baseline = last published commit (tag), or current HEAD on first run.
           if git rev-parse -q --verify "refs/tags/${PUBLISHED_TAG}" >/dev/null; then
             BEFORE="$(git rev-parse "refs/tags/${PUBLISHED_TAG}^{commit}")"
           else
@@ -52,51 +68,88 @@ jobs:
           fi
           echo "before=$BEFORE" >> "$GITHUB_OUTPUT"
 
-          git remote add upstream "$UPSTREAM_REPO"
-          git fetch --no-tags upstream master
-
-          if ! git merge --no-edit upstream/master; then
-            git merge --abort || true
-            echo "conflict=true" >> "$GITHUB_OUTPUT"
-            exit 0
+          if [ "$SKIP_SYNC" != "true" ]; then
+            git remote add upstream "$UPSTREAM_REPO"
+            git fetch --no-tags upstream master
+            if ! git merge --no-edit upstream/master; then
+              git merge --abort || true
+              gh issue create \
+                --title "Upstream merge conflict ($(date -u +%Y-%m-%d))" \
+                --body "Automatic merge of upstream/master failed in run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Resolve manually on master, then re-run." \
+                --label "sync-conflict" || true
+              echo "::error::Upstream merge conflict"
+              exit 1
+            fi
+            git push origin HEAD:master
           fi
-          echo "after=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Open issue on merge conflict
-        if: steps.sync.outputs.conflict == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh issue create \
-            --title "Upstream merge conflict ($(date -u +%Y-%m-%d))" \
-            --body "Automatic merge of upstream/master into master failed. Resolve manually, then re-run the workflow." \
-            --label "sync-conflict" || true
-
-      - name: Stop if merge conflicted
-        if: steps.sync.outputs.conflict == 'true'
-        run: exit 1
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Determine changed packages
         id: changes
+        env:
+          MANUAL: ${{ github.event.inputs.packages }}
         run: |
           set -euo pipefail
-          if [ -n "${{ github.event.inputs.packages }}" ]; then
-            PKGS="${{ github.event.inputs.packages }}"
+          BEFORE="${{ steps.sync.outputs.before }}"
+          AFTER="${{ steps.sync.outputs.sha }}"
+
+          if [ -n "${MANUAL// }" ]; then
+            CHANGED="$(tr ' ' '\n' <<<"$MANUAL" | sed '/^$/d' | sort -u)"
+            REMOVED=""
           else
-            # Only main-repo packages (packages/<name>/...), deduplicated.
-            PKGS="$(git diff --name-only "${{ steps.sync.outputs.before }}" "${{ steps.sync.outputs.after }}" -- 'packages/*/' \
-              | awk -F/ 'NF>=3 {print $2}' | sort -u \
-              | while read -r p; do [ -d "packages/$p" ] && echo "$p"; done | tr '\n' ' ')"
-          fi
-          echo "packages=$PKGS" >> "$GITHUB_OUTPUT"
-          if [ -z "${PKGS// }" ]; then
-            echo "No changed main packages to build."
-          else
-            echo "Changed packages: $PKGS"
+            # Main-repo package dirs touched in the range; keep only those that still exist.
+            ALL="$(git diff --name-only "$BEFORE" "$AFTER" -- 'packages/*/' | awk -F/ 'NF>=3 {print $2}' | sort -u)"
+            CHANGED="$(for p in $ALL; do [ -f "packages/$p/build.sh" ] && echo "$p"; done || true)"
+            REMOVED="$(for p in $ALL; do [ -f "packages/$p/build.sh" ] || echo "$p"; done || true)"
           fi
 
+          # Drop packages known to be broken (see scripts/r2/skip.list).
+          SKIP="$(sed -e 's/#.*//' -e 's/[[:space:]]*$//' -e '/^$/d' scripts/r2/skip.list 2>/dev/null || true)"
+          if [ -n "$SKIP" ] && [ -n "$CHANGED" ]; then
+            CHANGED="$(grep -vxF -f <(printf '%s\n' $SKIP) <<<"$CHANGED" || true)"
+          fi
+
+          COUNT=$(sed '/^$/d' <<<"$CHANGED" | wc -l)
+          MATRIX="$(sed '/^$/d' <<<"$CHANGED" | jq -R . | jq -cs .)"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+          echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
+          echo "removed=$(tr '\n' ' ' <<<"$REMOVED" | sed 's/ *$//')" >> "$GITHUB_OUTPUT"
+
+          {
+            echo "### Sync ${BEFORE:0:10} → ${AFTER:0:10}"
+            echo "- build: $COUNT package(s)"
+            [ -n "$CHANGED" ] && printf '  - %s\n' $CHANGED
+            [ -n "$REMOVED" ] && { echo "- removed upstream:"; printf '  - %s\n' $REMOVED; }
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  build:
+    needs: sync
+    if: needs.sync.outputs.count != '0'
+    permissions:
+      contents: read
+    runs-on: ubuntu-26.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        package: ${{ fromJson(needs.sync.outputs.matrix) }}
+    env:
+      COREPACK_ENABLE_DOWNLOAD_PROMPT: "0"
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync.outputs.sha }}
+
+      - name: Classify package
+        id: info
+        run: |
+          set -euo pipefail
+          big=false
+          grep -qFx "${{ matrix.package }}" scripts/big-pkgs.list && big=true
+          echo "big=$big" >> "$GITHUB_OUTPUT"
+
       - name: Enable zram
-        if: steps.changes.outputs.packages != ''
         uses: ./.github/actions/zram
         with:
           algorithm: zstd
@@ -105,59 +158,148 @@ jobs:
           device_name: /dev/zram0
 
       - name: Load Docker image
-        if: steps.changes.outputs.packages != ''
         run: ./scripts/run-docker.sh true
 
-      - name: Free additional disk space
-        if: steps.changes.outputs.packages != ''
+      - name: Free disk space
+        if: steps.info.outputs.big == 'true'
         run: ./scripts/free-space.sh
 
-      - name: Build changed packages
-        if: steps.changes.outputs.packages != ''
+      - name: Build ${{ matrix.package }}
+        id: build
         run: |
           set -euo pipefail
-          read -ra PKGS <<< "${{ steps.changes.outputs.packages }}"
-          # Build in dependency order; deps already built are pulled from our own
-          # R2 repo via -i, so only genuinely new/changed packages compile.
-          mapfile -t ORDER < <(./scripts/buildorder.py "${PKGS[@]}" 2>/dev/null | awk '{print $1}' || printf '%s\n' "${PKGS[@]}")
-          [ "${#ORDER[@]}" -gt 0 ] || ORDER=("${PKGS[@]}")
-          ./scripts/run-docker.sh -d ./build-package.sh -i -I -C -a aarch64 "${ORDER[@]}"
+          # -i/-I: pull already-published deps from our R2 repo (repo.json); a dep
+          # that is not yet published falls back to being built from source.
+          ./scripts/run-docker.sh ./build-package.sh -i -I -C -a "$TARGET_ARCH" "packages/${{ matrix.package }}"
+
+      - name: Collect debs
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          status=failure
+          [ "${{ steps.build.outcome }}" = "success" ] && status=success
+          echo "${{ matrix.package }} $status" > "artifacts/result-${{ matrix.package }}.txt"
+          # Only ship debs from a successful build; filenames may contain ':' so tar them.
+          if [ "$status" = success ] && compgen -G 'output/*.deb' >/dev/null; then
+            tar cf "artifacts/debs-${{ matrix.package }}.tar" -C output .
+          fi
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: build-${{ matrix.package }}
+          path: artifacts/
+          retention-days: 3
+
+  publish:
+    needs: [sync, build]
+    # Run even if some builds failed (publish what succeeded) or none were needed.
+    if: always() && needs.sync.result == 'success'
+    permissions:
+      contents: write # move the r2-published tag
+      issues: write # failure tracking issue
+    runs-on: ubuntu-26.04
+    env:
+      R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
+      R2_BUCKET: ${{ secrets.R2_BUCKET }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+      R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
+      GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
+      GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.sync.outputs.sha }}
+          fetch-depth: 0
+
+      - uses: actions/download-artifact@v7
+        if: needs.sync.outputs.count != '0'
+        with:
+          pattern: build-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Summarize build results
+        id: results
+        run: |
+          set -euo pipefail
+          mkdir -p debs
+          ok=(); failed=()
+          for r in artifacts/result-*.txt; do
+            [ -f "$r" ] || continue
+            read -r pkg status < "$r"
+            if [ "$status" = success ]; then ok+=("$pkg"); else failed+=("$pkg"); fi
+          done
+          for t in artifacts/debs-*.tar; do [ -f "$t" ] && tar xf "$t" -C debs; done
+          ndebs=$(find debs -name '*.deb' | wc -l)
+          echo "ok=${ok[*]:-}" >> "$GITHUB_OUTPUT"
+          echo "failed=${failed[*]:-}" >> "$GITHUB_OUTPUT"
+          echo "ndebs=$ndebs" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Build results"
+            echo "- succeeded (${#ok[@]}): ${ok[*]:-—}"
+            echo "- failed (${#failed[@]}): ${failed[*]:-—}"
+            echo "- debs to publish: $ndebs"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Install publish tools
+        if: steps.results.outputs.ndebs != '0' || needs.sync.outputs.removed != ''
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends rclone zstd gnupg unzip curl dpkg-dev
+          # Ubuntu's aptly 1.5 sends an empty x-amz-acl that R2 rejects; use 1.6.3.
+          mkdir -p scripts/r2/bin
+          curl -fsSL -o /tmp/aptly.zip https://github.com/aptly-dev/aptly/releases/download/v1.6.3/aptly_1.6.3_linux_amd64.zip
+          unzip -oq /tmp/aptly.zip -d /tmp
+          install -m755 /tmp/aptly_1.6.3_linux_amd64/aptly scripts/r2/bin/aptly
 
       - name: Publish to R2
-        if: steps.changes.outputs.packages != ''
-        env:
-          R2_ACCOUNT_ID: ${{ secrets.R2_ACCOUNT_ID }}
-          R2_BUCKET: ${{ secrets.R2_BUCKET }}
-          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
-          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
-          R2_PUBLIC_BASE_URL: ${{ secrets.R2_PUBLIC_BASE_URL }}
-          GPG_KEY_ID: ${{ secrets.GPG_KEY_ID }}
-          GPG_SIGNING_KEY: ${{ secrets.GPG_SIGNING_KEY }}
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+        if: steps.results.outputs.ndebs != '0' || needs.sync.outputs.removed != ''
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends rclone zstd gnupg unzip curl
-          # Ubuntu's aptly (1.5.0) emits an empty x-amz-acl that R2 rejects; use 1.6.3.
-          mkdir -p scripts/r2/bin
-          curl -fsSL -o /tmp/aptly.zip \
-            https://github.com/aptly-dev/aptly/releases/download/v1.6.3/aptly_1.6.3_linux_amd64.zip
-          unzip -o /tmp/aptly.zip -d /tmp >/dev/null
-          install -m755 /tmp/aptly_1.6.3_linux_amd64/aptly scripts/r2/bin/aptly
-          ./scripts/r2/publish-to-r2.sh output
+          args=()
+          for p in ${{ needs.sync.outputs.removed }}; do args+=(--remove "$p"); done
+          if [ "${{ steps.results.outputs.ndebs }}" != "0" ]; then args+=(debs); fi
+          ./scripts/r2/publish-to-r2.sh "${args[@]}"
+
+      - name: Verify published index
+        if: steps.results.outputs.ndebs != '0'
+        run: |
+          set -euo pipefail
+          curl -fsS "${R2_PUBLIC_BASE_URL%/}/apt/termux-main/dists/stable/main/binary-${TARGET_ARCH}/Packages" \
+            | awk '/^Package: /{p=$2} /^Version: /{print p"="$2}' | sort -u > /tmp/index
+          missing=0
+          while IFS= read -r f; do
+            key="$(dpkg-deb -f "$f" Package)=$(dpkg-deb -f "$f" Version)"
+            grep -qxF "$key" /tmp/index || { echo "::error::not in index: $key"; missing=1; }
+          done < <(find debs -name '*.deb')
+          [ $missing = 0 ]
 
       - name: Advance published marker
-        if: steps.changes.outputs.packages != '' && success()
         run: |
           set -euo pipefail
-          git tag -f "${PUBLISHED_TAG}" "${{ steps.sync.outputs.after }}"
-          git push origin HEAD:master
-          git push -f origin "${PUBLISHED_TAG}"
+          git config user.name "VibeStudio CI"
+          git config user.email "packages@vibestudio.app"
+          git tag -f "$PUBLISHED_TAG" "${{ needs.sync.outputs.sha }}"
+          git push -f origin "refs/tags/$PUBLISHED_TAG"
 
-      - name: Advance marker (no changes)
-        if: steps.changes.outputs.packages == '' && success()
+      - name: Track failures in an issue
+        if: steps.results.outputs.failed != ''
+        env:
+          FAILED: ${{ steps.results.outputs.failed }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          git tag -f "${PUBLISHED_TAG}" "${{ steps.sync.outputs.after }}"
-          git push origin HEAD:master
-          git push -f origin "${PUBLISHED_TAG}"
+          title="CI: package build failures"
+          body="$(printf 'Failed in [run %s](%s) at %s:\n\n' "${{ github.run_id }}" "$RUN_URL" "${{ needs.sync.outputs.sha }}"; for p in $FAILED; do printf -- '- `%s`\n' "$p"; done; printf '\nAdd persistent failures to `scripts/r2/skip.list` once triaged.\n')"
+          num="$(gh issue list --label ci-failure --state open --search "$title in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$num" ]; then
+            gh issue comment "$num" --body "$body"
+          else
+            gh issue create --title "$title" --label ci-failure --body "$body"
+          fi

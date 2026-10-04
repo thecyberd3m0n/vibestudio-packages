@@ -2180,13 +2180,15 @@ TERMUX_AM_APP__AM_CLASS__CLASS_NAME="$TERMUX_AM_APP__NAMESPACE.Am"
 # and are compiled locally.
 # FIXME: Checking for all variables will be added later in repo
 # changes pull, currently only `TERMUX_REPO_APP__PACKAGE_NAME` is checked.
-TERMUX_REPO_APP__PACKAGE_NAME="com.termux"
-TERMUX_REPO_APP__DATA_DIR="/data/data/com.termux"
-TERMUX_REPO__CORE_DIR="/data/data/com.termux/termux/core"
-TERMUX_REPO__APPS_DIR="/data/data/com.termux/termux/app"
-TERMUX_REPO__ROOTFS="/data/data/com.termux/files"
-TERMUX_REPO__HOME="/data/data/com.termux/files/home"
-TERMUX_REPO__PREFIX="/data/data/com.termux/files/usr"
+# This fork hosts its own repo (repo.json -> R2) built with the custom
+# prefix, so the repo values must mirror the app values for `-i` to work.
+TERMUX_REPO_APP__PACKAGE_NAME="$TERMUX_APP__PACKAGE_NAME"
+TERMUX_REPO_APP__DATA_DIR="$TERMUX_APP__DATA_DIR"
+TERMUX_REPO__CORE_DIR="$TERMUX__CORE_DIR"
+TERMUX_REPO__APPS_DIR="$TERMUX__APPS_DIR"
+TERMUX_REPO__ROOTFS="$TERMUX__ROOTFS"
+TERMUX_REPO__HOME="$TERMUX__HOME"
+TERMUX_REPO__PREFIX="$TERMUX__PREFIX"
 
 
 

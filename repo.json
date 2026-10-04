@@ -5,17 +5,5 @@
     "distribution": "stable",
     "component": "main",
     "url": "https://pub-88d4652a5f2b459b95722d5376b49dfa.r2.dev/apt/termux-main"
-  },
-  "root-packages": {
-    "name": "termux-root",
-    "distribution": "root",
-    "component": "stable",
-    "url": "https://packages-cf.termux.dev/apt/termux-root"
-  },
-  "x11-packages": {
-    "name": "termux-x11",
-    "distribution": "x11",
-    "component": "main",
-    "url": "https://packages-cf.termux.dev/apt/termux-x11"
   }
 }

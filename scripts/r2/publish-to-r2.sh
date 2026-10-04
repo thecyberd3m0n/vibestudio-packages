@@ -2,14 +2,25 @@
 # Add freshly-built .deb files to the R2 apt repo and republish.
 # Used by CI (and safe to run locally). Requires the repo to be seeded first.
 #
-# Usage: scripts/r2/publish-to-r2.sh DEB_OR_DIR [DEB_OR_DIR ...]
+# Usage: scripts/r2/publish-to-r2.sh [--remove PKG ...] [--] DEB_OR_DIR [DEB_OR_DIR ...]
+#   --remove PKG   drop PKG (and any of its versions) from the repo; repeatable.
+#                  At least one --remove or one DEB_OR_DIR is required.
 
 set -euo pipefail
 
 cd "$(dirname "$0")/../.."
 . scripts/r2/_r2-common.sh
 
-(( $# > 0 )) || die "Usage: $0 DEB_OR_DIR [DEB_OR_DIR ...]"
+REMOVE=()
+while (( $# )); do
+	case "$1" in
+		--remove) [[ -n "${2:-}" ]] || die "--remove needs a package name"; REMOVE+=("$2"); shift 2;;
+		--) shift; break;;
+		-*) die "Unknown option: $1";;
+		*) break;;
+	esac
+done
+(( $# > 0 || ${#REMOVE[@]} > 0 )) || die "Usage: $0 [--remove PKG ...] DEB_OR_DIR [DEB_OR_DIR ...]"
 
 ensure_tools gpg rclone zstd dpkg-deb
 ensure_gpg_key
@@ -26,8 +37,8 @@ for arg in "$@"; do
 		die "Not a .deb file or directory: $arg"
 	fi
 done
-(( ${#DEBS[@]} > 0 )) || die "No .deb files to publish"
-echo "Publishing ${#DEBS[@]} .deb files"
+(( ${#DEBS[@]} > 0 || ${#REMOVE[@]} > 0 )) || die "No .deb files to publish and nothing to remove"
+echo "Publishing ${#DEBS[@]} .deb files, removing ${#REMOVE[@]} packages"
 
 render_aptly_config
 
@@ -38,7 +49,7 @@ aptly_cmd repo list -raw | grep -qx "$APT_REPO_NAME" \
 
 # Drop any existing versions of these packages first so the repo stays
 # latest-only and same-version rebuilds don't collide in the pool.
-NAMES=()
+NAMES=("${REMOVE[@]}")
 for _deb in "${DEBS[@]}"; do
 	NAMES+=("$(dpkg-deb -f "$_deb" Package)")
 done
@@ -46,10 +57,14 @@ if (( ${#NAMES[@]} )); then
 	aptly_cmd repo remove "$APT_REPO_NAME" "${NAMES[@]}" || true
 fi
 
-aptly_cmd repo add -force-replace "$APT_REPO_NAME" "${DEBS[@]}"
+if (( ${#DEBS[@]} )); then
+	aptly_cmd repo add -force-replace "$APT_REPO_NAME" "${DEBS[@]}"
+fi
 
 mapfile -t PASS_ARGS < <(gpg_pass_args)
+# Same-version rebuilds produce different bytes; let them replace pool files.
 aptly_cmd publish update "${PASS_ARGS[@]}" \
+	-force-overwrite \
 	-gpg-key="$GPG_KEY_ID" \
 	"$APT_DISTRIBUTION" "$APT_PUBLISH_TARGET"
 

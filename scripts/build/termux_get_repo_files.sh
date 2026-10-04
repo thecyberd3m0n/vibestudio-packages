@@ -9,6 +9,12 @@ termux_get_repo_files() {
 
 	[[ "${CI-false}" == "true" ]] && echo "::group::INFO: Fetching repo metadata" || :
 
+	# The fork's repo (repo.json) is signed with our own key, which the
+	# upstream builder image does not ship; import it before verifying.
+	if compgen -G "$TERMUX_SCRIPTDIR/scripts/r2/keys/*.asc" >/dev/null; then
+		gpg --batch --quiet --import "$TERMUX_SCRIPTDIR"/scripts/r2/keys/*.asc 2>/dev/null || :
+	fi
+
 	for idx in "${!TERMUX_REPO_URL[@]}"; do
 		local TERMUX_REPO_NAME="${TERMUX_REPO_URL[$idx]#https://}"
 		TERMUX_REPO_NAME="${TERMUX_REPO_NAME#http://}"

@@ -1,0 +1,18 @@
+# Packages CI must not attempt to build (one per line, '#' comments allowed).
+# Each needs a source-level fix; remove the entry once it builds locally.
+
+# proot: resolves host glibc paths under the fork prefix (aosp-libs wiring)
+awscli
+sbcl
+
+# source/toolchain errors
+ckermit                 # implicit-int in ckwart.c
+clpeak                  # undefined vk_shaders::image_bandwidth_v1*
+libsoup3                # gir introspection link failure
+openmpi                 # libprrte link failure
+sideloader              # needs ldc (huge LLVM build)
+alpine                  # aclocal "too many loops"
+httrack                 # undefined posix_spawnp (API 24)
+mapserver               # MAX undeclared in mapstring.cpp
+spirv-llvm-translator   # Triple->StringRef API mismatch vs installed LLVM
+mesa                    # depends on spirv-llvm-translator

@@ -162,6 +162,15 @@ __change_builder_uid_gid() {
 	fi
 }
 
+# The upstream builder image links /system to com.termux's data dir; proot
+# builds (aosp-libs) need it to follow this fork's TERMUX_APP__DATA_DIR.
+__fix_system_symlink() {
+	local app_data_dir
+	app_data_dir=$(sed -n 's/^TERMUX_APP__PACKAGE_NAME="\(.*\)"$/\/data\/data\/\1/p' "$TERMUX_SCRIPTDIR/scripts/properties.sh")
+	[ -n "$app_data_dir" ] || return 0
+	$SUDO docker exec -u root $CONTAINER_NAME ln -sfn "$app_data_dir/aosp" /system
+}
+
 __change_container_pid_max() {
 	if [ "$UNAME" != Darwin ]; then
 		echo "Changing /proc/sys/kernel/pid_max to 65535 for packages that need to run native executables using proot (for 32-bit architectures)"
@@ -200,6 +209,7 @@ if ! $SUDO docker container inspect $CONTAINER_NAME > /dev/null 2>&1; then
 		$TERMUX_DOCKER_RUN_EXTRA_ARGS \
 		$TERMUX_BUILDER_IMAGE_NAME
 	__change_builder_uid_gid
+	__fix_system_symlink
 	__change_container_pid_max
 	load_apparmor_profile ./scripts/profile-restricted.apparmor "Loading restricted AppArmor profile"
 fi
@@ -207,6 +217,7 @@ fi
 if [[ "$($SUDO docker container inspect -f '{{ .State.Running }}' $CONTAINER_NAME)" == "false" ]]; then
 	load_apparmor_profile ./scripts/profile-restricted.apparmor "Loading restricted AppArmor profile"
 	$SUDO docker start $CONTAINER_NAME >/dev/null 2>&1
+	__fix_system_symlink
 	__change_container_pid_max
 fi
 

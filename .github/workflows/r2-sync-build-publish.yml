@@ -39,10 +39,11 @@ env:
   SYNC_PATHS: packages x11-packages root-packages
   PUBLISHED_TAG: r2-published
   TARGET_ARCH: aarch64
-  # Failed builds are retried on following runs (scripts/r2/retry.list) up to
-  # this many attempts in total, then dropped and reported in the issue.
+  # A failed build gets exactly one more attempt on the next run (covers
+  # transient failures such as download errors). Builds that keep failing are
+  # left alone and reported in the tracking issue; fix them via a PR.
   RETRY_FILE: scripts/r2/retry.list
-  RETRY_MAX: 3
+  RETRY_MAX: 2
 
 jobs:
   sync:
@@ -55,6 +56,7 @@ jobs:
       before: ${{ steps.sync.outputs.before }}
       matrix: ${{ steps.changes.outputs.matrix }}
       removed: ${{ steps.changes.outputs.removed }}
+      deferred: ${{ steps.changes.outputs.deferred }}
       count: ${{ steps.changes.outputs.count }}
     steps:
       - uses: actions/checkout@v7
@@ -149,6 +151,16 @@ jobs:
           fi
 
           COUNT=$(sed '/^$/d' <<<"$CHANGED" | wc -l)
+          # GitHub caps a matrix at 256 jobs; defer the rest to the next run via
+          # retry.list rather than letting publish advance the tag over them.
+          DEFERRED=""
+          if [ "$COUNT" -gt 256 ]; then
+            DEFERRED="$(sed '/^$/d' <<<"$CHANGED" | tail -n +257)"
+            CHANGED="$(sed '/^$/d' <<<"$CHANGED" | head -n 256)"
+            COUNT=256
+            echo "::warning::$(wc -l <<<"$DEFERRED") packages deferred to the next run (256-job matrix limit)"
+          fi
+          echo "deferred=$(tr '\n' ' ' <<<"$DEFERRED" | sed 's/ *$//')" >> "$GITHUB_OUTPUT"
           MATRIX="$(sed '/^$/d' <<<"$CHANGED" | jq -R . | jq -cs .)"
           echo "count=$COUNT" >> "$GITHUB_OUTPUT"
           echo "matrix=$MATRIX" >> "$GITHUB_OUTPUT"
@@ -160,6 +172,7 @@ jobs:
             if [ -n "$CHANGED" ]; then printf '  - %s\n' $CHANGED; fi
             if [ -n "$RETRY" ]; then echo "- retried from $RETRY_FILE:"; printf '  - %s\n' $RETRY; fi
             if [ -n "$REMOVED" ]; then echo "- removed upstream:"; printf '  - %s\n' $REMOVED; fi
+            if [ -n "$DEFERRED" ]; then echo "- deferred to next run:"; printf '  - %s\n' $DEFERRED; fi
           } >> "$GITHUB_STEP_SUMMARY"
 
   build:
@@ -268,11 +281,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p debs
-          ok=(); failed=()
+          ok=()
           for r in artifacts/result-*.txt; do
             [ -f "$r" ] || continue
             read -r pkg status < "$r"
-            if [ "$status" = success ]; then ok+=("$pkg"); else failed+=("$pkg"); fi
+            [ "$status" = success ] && ok+=("$pkg")
+          done
+          # Everything in the matrix that did not report success counts as failed,
+          # including jobs that were cancelled or never ran (no result artifact).
+          failed=()
+          for pkg in $(jq -r '.[]' <<<'${{ needs.sync.outputs.matrix }}'); do
+            printf '%s\n' "${ok[@]:-}" | grep -qxF -- "$pkg" || failed+=("$pkg")
           done
           for t in artifacts/debs-*.tar; do [ -f "$t" ] && tar xf "$t" -C debs; done
           ndebs=$(find debs -name '*.deb' | wc -l)
@@ -321,6 +340,10 @@ jobs:
           [ $missing = 0 ]
 
       - name: Advance published marker
+        # A manual `packages=` run builds only what was asked for, so the range
+        # BEFORE..sha may still contain unbuilt changes: leave the tag alone and
+        # let the next scheduled run pick them up.
+        if: github.event.inputs.packages == ''
         run: |
           set -euo pipefail
           git config user.name "VibeStudio CI"
@@ -334,10 +357,12 @@ jobs:
         env:
           OK: ${{ steps.results.outputs.ok }}
           FAILED: ${{ steps.results.outputs.failed }}
+          DEFERRED: ${{ needs.sync.outputs.deferred }}
         run: |
           set -euo pipefail
           # retry.list: one "<package> <attempts>" per line. Packages built this
-          # run leave the list; failed ones (re)enter with attempts+1 until RETRY_MAX.
+          # run leave the list; failed ones (re)enter with attempts+1 until RETRY_MAX;
+          # packages deferred by the matrix cap enter with their attempts unchanged.
           declare -A old=()
           if [ -f "$RETRY_FILE" ]; then
             while read -r p n _; do [ -n "$p" ] && [ "${p#\#}" = "$p" ] && old["$p"]="${n:-0}"; done < "$RETRY_FILE"
@@ -345,6 +370,7 @@ jobs:
           declare -A new=()
           for p in "${!old[@]}"; do new["$p"]="${old[$p]}"; done
           for p in $OK; do unset 'new[$p]'; done
+          for p in $DEFERRED; do new["$p"]="${old[$p]:-0}"; done
           gaveup=()
           for p in $FAILED; do
             n=$(( ${old[$p]:-0} + 1 ))
@@ -359,6 +385,8 @@ jobs:
           echo "gaveup=${gaveup[*]:-}" >> "$GITHUB_OUTPUT"
 
           if git diff --quiet -- "$RETRY_FILE"; then exit 0; fi
+          git config user.name "VibeStudio CI"
+          git config user.email "packages@vibestudio.app"
           git add "$RETRY_FILE"
           git commit -q -m "ci: update $RETRY_FILE" \
             -m "succeeded: ${OK:-—}" -m "failed: ${FAILED:-—}" -m "gave up: ${gaveup[*]:-—}"

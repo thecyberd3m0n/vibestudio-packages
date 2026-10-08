@@ -3,8 +3,12 @@ name: R2 sync, build & publish
 # Hourly: merge upstream termux-packages, build the main-repo packages that
 # changed since the last publish (aarch64), publish them to the R2 apt repo.
 #
+# Only the package repos (SYNC_PATHS) are taken from upstream. Everything else
+# (.github/, scripts/, repo.json, ...) always stays as on our master: it carries
+# fork-specific changes, and GITHUB_TOKEN may not push workflow files anyway.
+#
 # Jobs:
-#   sync    - merge upstream, push master, compute changed/removed packages
+#   sync    - merge upstream packages, push master, compute changed/removed packages
 #   build   - one matrix job per package; deps come from our R2 repo via -i
 #   publish - add all built debs to aptly, drop removed packages, move tag,
 #             open/update a tracking issue for failures
@@ -31,6 +35,8 @@ concurrency:
 
 env:
   UPSTREAM_REPO: https://github.com/termux/termux-packages.git
+  # Directories synced from upstream; all other paths are kept from our master.
+  SYNC_PATHS: packages x11-packages root-packages
   PUBLISHED_TAG: r2-published
   TARGET_ARCH: aarch64
 
@@ -71,16 +77,41 @@ jobs:
           if [ "$SKIP_SYNC" != "true" ]; then
             git remote add upstream "$UPSTREAM_REPO"
             git fetch --no-tags upstream master
-            if ! git merge --no-edit upstream/master; then
-              git merge --abort || true
-              gh issue create \
-                --title "Upstream merge conflict ($(date -u +%Y-%m-%d))" \
-                --body "Automatic merge of upstream/master failed in run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Resolve manually on master, then re-run." \
-                --label "sync-conflict" || true
-              echo "::error::Upstream merge conflict"
-              exit 1
+
+            if git merge-base --is-ancestor upstream/master HEAD; then
+              echo "Already up to date with upstream."
+            else
+              # Pathspec for everything that is NOT synced from upstream.
+              KEEP=(.)
+              for p in $SYNC_PATHS; do KEEP+=(":!$p"); done
+
+              # Merge without committing; conflicts are handled below.
+              if ! git merge --no-commit --no-ff upstream/master; then
+                git rev-parse -q --verify MERGE_HEAD >/dev/null || { echo "::error::git merge failed"; exit 1; }
+              fi
+
+              # Outside SYNC_PATHS our master always wins: drop files upstream
+              # added there and restore everything else (incl. conflicts) to HEAD.
+              git diff --cached --name-only --no-renames --diff-filter=A HEAD -- "${KEEP[@]}" \
+                | xargs -r -d '\n' git rm -q -f --
+              git checkout HEAD -- "${KEEP[@]}"
+
+              # Any conflict left now is inside a package dir and needs a human.
+              if git diff --name-only --diff-filter=U | grep -q .; then
+                git diff --name-only --diff-filter=U
+                git merge --abort || true
+                gh issue create \
+                  --title "Upstream merge conflict ($(date -u +%Y-%m-%d))" \
+                  --body "Automatic merge of upstream/master failed in run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Resolve manually on master, then re-run." \
+                  --label "sync-conflict" || true
+                echo "::error::Upstream merge conflict"
+                exit 1
+              fi
+
+              git commit -q -m "Merge upstream/master ($SYNC_PATHS)" \
+                -m "Only $SYNC_PATHS are taken from upstream; all other paths are kept from master."
+              git push origin HEAD:master
             fi
-            git push origin HEAD:master
           fi
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 

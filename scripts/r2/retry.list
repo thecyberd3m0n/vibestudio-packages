@@ -1,0 +1,10 @@
+# Packages whose last build failed; retried by r2-sync-build-publish.yml.
+# Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
+command-not-found 1
+maintainerr 1
+mediainfo 1
+monetdb 2
+neovim-nightly 2
+pandoc 1
+rtorrent 1
+yazi 1

@@ -1,2 +1,16 @@
 # Packages whose last build failed; retried by r2-sync-build-publish.yml.
 # Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
+aapt 1
+android-tools 1
+apache-orc 1
+et 1
+libarrow-cpp 1
+libgrpc 1
+libosmpbf 1
+libprotobuf-c 1
+monero 1
+mosh 1
+onnxruntime 1
+pikiwidb 1
+proton-pass-cli 1
+termux-gui-c 1

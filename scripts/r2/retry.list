@@ -1,2 +1,20 @@
 # Packages whose last build failed; retried by r2-sync-build-publish.yml.
 # Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
+aubio 1
+ffmpeg 1
+ffmpegthumbnailer 1
+gpac 1
+gst-libav 1
+libchromaprint 1
+minidlna 1
+mpd 1
+mplayer 1
+mpv 1
+notcurses 1
+pianobar 1
+pipewire 1
+python-torchcodec 1
+rsgain 1
+timg 1
+unpaper 1
+vgmstream 1

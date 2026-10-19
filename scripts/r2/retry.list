@@ -1,2 +1,16 @@
 # Packages whose last build failed; retried by r2-sync-build-publish.yml.
 # Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
+cmus 1
+gegl 1
+manim 1
+megacmd 1
+mosh 1
+navidrome 1
+onnxruntime 1
+python-grpcio 1
+python-torchvision 1
+radarr 1
+sonarr 1
+srt2vobsub 1
+termux-gui-c 1
+vhs 1

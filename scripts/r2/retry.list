@@ -1,8 +1,2 @@
 # Packages whose last build failed; retried by r2-sync-build-publish.yml.
 # Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
-gegl 1
-libvips 1
-pdf2svg 1
-pdfgrep 1
-poppler 1
-timg 1

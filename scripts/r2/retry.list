@@ -1,5 +1,2 @@
 # Packages whose last build failed; retried by r2-sync-build-publish.yml.
 # Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
-openjdk-17 1
-openjdk-25 1
-proot-distro 1

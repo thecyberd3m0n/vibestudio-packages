@@ -1,6 +1,4 @@
 # Packages whose last build failed; retried by r2-sync-build-publish.yml.
 # Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
-gdk-pixbuf 1
-libunbound 1
-python-pip 1
-squeezelite 1
+git-annex 1
+libknot 1

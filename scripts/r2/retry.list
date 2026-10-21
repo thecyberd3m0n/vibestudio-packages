@@ -1,2 +1,11 @@
 # Packages whose last build failed; retried by r2-sync-build-publish.yml.
 # Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
+android-tools 1
+fdroidcl 1
+go-findimagedupes 1
+gomp 1
+gopass 1
+lnd 1
+navidrome 1
+proton-bridge 1
+vhs 1

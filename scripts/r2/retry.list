@@ -1,2 +1,4 @@
 # Packages whose last build failed; retried by r2-sync-build-publish.yml.
 # Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
+nala 1
+neovim-nightly 1

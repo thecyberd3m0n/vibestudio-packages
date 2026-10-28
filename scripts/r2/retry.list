@@ -1,6 +1,2 @@
 # Packages whose last build failed; retried by r2-sync-build-publish.yml.
 # Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
-hurl 1
-nim 1
-python-torchvision 1
-rmlint 1

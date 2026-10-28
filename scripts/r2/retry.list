@@ -1,4 +1,28 @@
 # Packages whose last build failed; retried by r2-sync-build-publish.yml.
 # Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
-lux-cli 1
-manim 1
+boost 1
+foundry 1
+i2pd 1
+innoextract 1
+ledger 1
+lgogdownloader 1
+libc++utilities 1
+libcmis 1
+libixion 1
+liborcus 1
+libpagmo 1
+libtorrent-rasterbar 1
+monero 1
+ncmpcpp 1
+neovim-nightly 1
+nzbget 1
+openscad 1
+osmium-tool 1
+povray 1
+qrsspig 1
+ravencoin 1
+solidity 1
+supercollider 1
+tizonia 1
+tome2 1
+vera 1

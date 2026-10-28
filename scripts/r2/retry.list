@@ -1,3 +1,4 @@
 # Packages whose last build failed; retried by r2-sync-build-publish.yml.
 # Format: <package> <attempts so far>. Maintained by CI, do not edit by hand.
-ncdu2 1
+cmake 1
+lwjgl3 1

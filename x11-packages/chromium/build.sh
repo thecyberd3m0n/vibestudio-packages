@@ -2,9 +2,9 @@ TERMUX_PKG_HOMEPAGE=https://www.chromium.org/Home
 TERMUX_PKG_DESCRIPTION="Chromium web browser"
 TERMUX_PKG_LICENSE="BSD 3-Clause"
 TERMUX_PKG_MAINTAINER="@licy183"
-TERMUX_PKG_VERSION="156.0.8078.73"
+TERMUX_PKG_VERSION="158.0.8127.36"
 TERMUX_PKG_SRCURL="https://github.com/chromium-linux-tarballs/chromium-tarballs/releases/download/$TERMUX_PKG_VERSION/chromium-$TERMUX_PKG_VERSION-linux.tar.xz"
-TERMUX_PKG_SHA256=bb701465f0d3991e7266d24add8b0d39e202a1f209a5b169387785326b0d079a
+TERMUX_PKG_SHA256=21b8adf397a045173b3fbc9ab87be0f4e97f1c0b0dc396584ea21b7db2c36624
 TERMUX_PKG_DEPENDS="atk, cups, dbus, fontconfig, gtk3, krb5, libc++, libevdev, libxkbcommon, libminizip, libnss, libx11, mesa, openssl, pango, pipewire, pulseaudio, zlib"
 TERMUX_PKG_BUILD_DEPENDS="chromium-host-tools, libffi-static"
 # Chromium doesn't support i686 on Linux.
@@ -119,6 +119,8 @@ EOF
 	ln -sf $(command -v java) third_party/jdk/current/bin/
 	mkdir -p third_party/dawn/tools/golang/linux-amd64/bin/
 	ln -sf $(command -v go) third_party/dawn/tools/golang/linux-amd64/bin/
+	mkdir -p third_party/cpython3/host/bin
+	ln -sf $(command -v python3) third_party/cpython3/host/bin/
 
 	# Install nodejs
 	if [ ! -f "third_party/node/linux/node-linux-x64/bin/node" ]; then
@@ -263,8 +265,7 @@ use_ozone = true
 ozone_auto_platforms = false
 ozone_platform = \"x11\"
 ozone_platform_x11 = true
-# TODO: Enable wayland
-ozone_platform_wayland = false
+ozone_platform_wayland = true
 ozone_platform_headless = true
 angle_enable_vulkan = true
 angle_enable_swiftshader = true
@@ -296,7 +297,7 @@ use_jumbo_build = true
 # Compile pdfium as a static library
 pdf_is_complete_lib = true
 # Disable v8's metagen
-v8_use_metagen_instance_types = false
+v8_use_metagen = false
 " > $_common_args_file
 
 	if [ "$TERMUX_ARCH" = "arm" ]; then
@@ -383,7 +384,6 @@ termux_step_make_install() {
 		chrome_crashpad_handler
 		headless_shell
 		chromedriver
-		generate_colors_info
 
 		# Resource files
 		chrome_100_percent.pak
@@ -449,6 +449,9 @@ termux_step_make_install() {
 		-e 's/@@usr_bin_symlink_name/chromium-browser/g' \
 		-e 's|@@uri_scheme|x-scheme-handler/chromium;|g' \
 		-e 's/@@extra_desktop_entries//g' \
+		-e "s|@@desktop_exec|$TERMUX_PREFIX/bin/chromium-browser|g" \
+		-e 's|@@startup_wm_class|Chromium-browser|g' \
+		-e 's|@@desktop_icon|chromium|g' \
 		-e "s|Exec=/usr/bin|Exec=$TERMUX_PREFIX/bin|g" \
 		"$TERMUX_PREFIX/share/applications/chromium.desktop" \
 		"$TERMUX_PREFIX/share/man/man1/chromium.1"

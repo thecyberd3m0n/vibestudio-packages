@@ -3,9 +3,15 @@ TERMUX_PKG_DESCRIPTION="An open-source implementation of the OpenGL specificatio
 TERMUX_PKG_LICENSE="MIT"
 TERMUX_PKG_LICENSE_FILE="docs/license.rst"
 TERMUX_PKG_MAINTAINER="@termux"
-TERMUX_PKG_VERSION="26.2.6"
-TERMUX_PKG_SRCURL="https://archive.mesa3d.org/mesa-${TERMUX_PKG_VERSION}.tar.xz"
-TERMUX_PKG_SHA256=b9436b3e1a8be76fbd4823dc884f90596ab7c6ac5e1867a305e66ffccfb31a92
+TERMUX_PKG_VERSION="26.3.1"
+TERMUX_PKG_SRCURL=(
+	https://archive.mesa3d.org/mesa-${TERMUX_PKG_VERSION}.tar.xz
+	https://gitlab.freedesktop.org/virgl/venus-protocol/-/archive/v1.1.3/venus-protocol-v1.1.3.tar.gz
+)
+TERMUX_PKG_SHA256=(
+	4e4e438eac7b840a9383988cbb7c08dad8041da544b9319fc26d319fa7348961
+	c5a362ca28e0a35042db1baeadaf9183500b216841e49d72714b80bae50b4445
+)
 TERMUX_PKG_AUTO_UPDATE=true
 TERMUX_PKG_DEPENDS="libandroid-shmem, libc++, libdrm, libglvnd, libllvm (<< $TERMUX_LLVM_NEXT_MAJOR_VERSION), libwayland, libx11, libxext, libxfixes, libxshmfence, libxxf86vm, ncurses, vulkan-loader, zlib, zstd"
 TERMUX_PKG_SUGGESTS="mesa-dev"
@@ -137,8 +143,12 @@ termux_step_host_build() {
 }
 
 termux_step_post_get_source() {
-	# Do not use meson wrap projects
+	# Do not use meson wrap projects, except the bundled venus-protocol
+	mv subprojects/venus-protocol.wrap .
 	rm -rf subprojects
+	mkdir subprojects
+	mv venus-protocol.wrap subprojects/
+	mv venus-protocol-v1.1.3 subprojects/venus-protocol-1.1.3
 }
 
 termux_step_pre_configure() {

@@ -1,0 +1,11 @@
+--- a/pnpm/crates/ffi-fs/src/dir_handle.rs
++++ b/pnpm/crates/ffi-fs/src/dir_handle.rs
+@@ -337,7 +337,7 @@ pub fn entry_metadata_at(parent: &File, name: &OsStr) -> io::Result<Option<Entry
+         len: u64::try_from(stat.st_size).unwrap_or(0),
+         modified: entry_time(stat.st_mtime, modified_nanoseconds),
+         accessed: entry_time(stat.st_atime, accessed_nanoseconds),
+-        kind: entry_kind(stat.st_mode),
++        kind: entry_kind(stat.st_mode as libc::mode_t),
+     }))
+ }
+ 

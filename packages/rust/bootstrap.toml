@@ -30,7 +30,7 @@ tools = [
     "rustfmt",
     "rust-analyzer-proc-macro-srv",
     "analysis",
-    "src",
+    "rust-src",
 ]
 sanitizers = false
 android-ndk = "@TERMUX_STANDALONE_TOOLCHAIN@"
@@ -50,7 +50,7 @@ rpath = false
 lld = false
 
 [target.x86_64-unknown-linux-gnu]
-llvm-config = "@TERMUX_HOST_LLVM_BASE_DIR@/bin/llvm-config"
+llvm-config = "@HOST_LLVM_CONFIG@"
 rpath = true
 
 [target.aarch64-linux-android]

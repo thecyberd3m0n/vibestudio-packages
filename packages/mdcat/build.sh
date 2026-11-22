@@ -2,9 +2,9 @@ TERMUX_PKG_HOMEPAGE=https://github.com/BIRSAx2/mdcat
 TERMUX_PKG_DESCRIPTION="Fancy cat for Markdown: syntax highlighting, images, math, and Mermaid diagrams in your terminal"
 TERMUX_PKG_LICENSE="MPL-2.0"
 TERMUX_PKG_MAINTAINER="Gouranga Das Samrat <gouranga.das.khulna@gmail.com>"
-TERMUX_PKG_VERSION="2.19.0"
+TERMUX_PKG_VERSION="2.20.2"
 TERMUX_PKG_SRCURL=https://github.com/BIRSAx2/mdcat/archive/refs/tags/mdcat-${TERMUX_PKG_VERSION}.tar.gz
-TERMUX_PKG_SHA256=3be97adf9feff078d95e64f176c957074d20e1111046eb7d7331aefee2c65b9d
+TERMUX_PKG_SHA256=511a20572635faa0d6b0fd1080d7336a5b38738ad6d189abe9c7a71facd3c5d7
 TERMUX_PKG_DEPENDS="libcurl"
 TERMUX_PKG_BUILD_DEPENDS="asciidoctor, perl"
 TERMUX_PKG_BUILD_IN_SRC=true
@@ -15,7 +15,8 @@ termux_step_pre_configure() {
 }
 
 termux_step_make() {
-	cargo build \
+	# cc-rs appends CFLAGS to CFLAGS_<target>, so target flags in CFLAGS leak into host build scripts (psm)
+	env -u CFLAGS cargo build \
 		--jobs "$TERMUX_PKG_MAKE_PROCESSES" \
 		--target "${CARGO_TARGET_NAME}" \
 		--features curl/static-ssl \

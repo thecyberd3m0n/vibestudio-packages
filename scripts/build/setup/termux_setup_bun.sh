@@ -1,8 +1,8 @@
 # shellcheck shell=bash
 
 termux_setup_bun() {
-	local TERMUX_BUN_VERSION="${TERMUX_BUN_VERSION:-1.4.2}"
-	local TERMUX_BUN_SHA256="36368faef7527875d5ffa52e53cd48021741f2a83eb6208a8dd64068d422a913"
+	local TERMUX_BUN_VERSION="${TERMUX_BUN_VERSION:-1.4.5}"
+	local TERMUX_BUN_SHA256="94559b3b528995a49452f9f2404cec74f2efd7d06e0a000a8cd214b02c3666eb"
 
 	if [[ "${TERMUX_ON_DEVICE_BUILD}" == "true" ]]; then
 		if ! command -v bun; then

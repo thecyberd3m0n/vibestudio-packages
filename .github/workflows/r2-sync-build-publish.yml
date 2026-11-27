@@ -91,6 +91,11 @@ jobs:
               KEEP=(.)
               for p in $SYNC_PATHS; do KEEP+=(":!$p"); done
 
+              # Undo our patches first so upstream changes to those files never conflict.
+              vibe-patches/apply.sh revert
+              git commit -q --allow-empty -m "Revert vibe-patches before upstream merge"
+
+
               # Merge without committing; conflicts are handled below.
               if ! git merge --no-commit --no-ff upstream/master; then
                 git rev-parse -q --verify MERGE_HEAD >/dev/null || { echo "::error::git merge failed"; exit 1; }
@@ -113,6 +118,17 @@ jobs:
                 echo "::error::Upstream merge conflict"
                 exit 1
               fi
+
+              # Re-apply our patches (vibe-patches/<pkg>/*.patch) on top of upstream.
+              # Patches that no longer apply are skipped and reported.
+              vibe-patches/apply.sh apply
+              if [ -n "$(sed -n 's/^failed=//p' "$GITHUB_OUTPUT" | tail -1)" ]; then
+                gh issue create \
+                  --title "vibe-patches no longer apply ($(date -u +%Y-%m-%d))" \
+                  --body "Failed: $(sed -n 's/^failed=//p' "$GITHUB_OUTPUT" | tail -1). Run ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+                  --label "sync-conflict" || true
+              fi
+
 
               git commit -q -m "Merge upstream/master ($SYNC_PATHS)" \
                 -m "Only $SYNC_PATHS are taken from upstream; all other paths are kept from master."
